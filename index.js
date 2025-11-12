@@ -26,14 +26,14 @@ function pickRandomElements(source, count, stateFilePath = STATE_FILE) {
 		throw new RangeError('count must be between 0 and the array length');
 	}
 
-  // こんなに厳密に見る必要はないが、一応元配列の重複チェックしておく。
+	// こんなに厳密に見る必要はないが、一応元配列の重複チェックしておく。
 	const normalizedSource = [...source];
 	const sourceUniqueSize = new Set(normalizedSource).size;
 	if (count > sourceUniqueSize) {
 		throw new RangeError('count must be between 0 and the number of unique elements');
 	}
 
-  // 抽選履歴を読み出す。
+	// 抽選履歴を読み出す。
 	let history = loadPickHistory(stateFilePath, normalizedSource);
 	let historySet = new Set(history);
 	let available = normalizedSource.filter((item) => !historySet.has(item));
@@ -41,17 +41,19 @@ function pickRandomElements(source, count, stateFilePath = STATE_FILE) {
 	const pickedSet = new Set();
 
 	// Fisher-Yatesの考え方で残りから無作為に1件ずつ引く。
-  // https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
+	// https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
 	while (picked.length < count) {
 		if (available.length === 0) {
 			if (historySet.size === sourceUniqueSize) {
-				// 全件消化したので新しいサイクルを開始。
-				history = [];
-				historySet = new Set();
+				// 全件消化したので新しいサイクルを開始。直前の結果は持ち越す。
+				history = history.slice(-1);
+				historySet = new Set(history);
 			}
-      // 実行中にavailableが空になった場合のみ、偏りを防ぐためにシャッフルを実行。
-			available = fisherYatesShuffle(normalizedSource).filter((item) => !pickedSet.has(item));      
-      
+			// 実行中にavailableが空になった場合のみ、偏りを防ぐためにシャッフルを実行。
+			available = fisherYatesShuffle(normalizedSource).filter(
+				(item) => !historySet.has(item) && !pickedSet.has(item),
+			);
+
 			if (available.length === 0) {
 				throw new Error('No available elements to pick. Ensure source has enough unique values.');
 			}
@@ -68,11 +70,8 @@ function pickRandomElements(source, count, stateFilePath = STATE_FILE) {
 		historySet.add(next);
 	}
 
-	if (historySet.size === sourceUniqueSize) {
-		writePickHistory(stateFilePath, []);
-	} else {
-		writePickHistory(stateFilePath, history);
-	}
+	const persistedHistory = historySet.size === sourceUniqueSize ? history.slice(-1) : history;
+	writePickHistory(stateFilePath, persistedHistory);
 
 	return picked;
 }
@@ -142,5 +141,5 @@ module.exports = {
 	writePickHistory,
 };
 
-const selected = pickRandomElements(element, 5);
+const selected = pickRandomElements(element, 1);
 console.log(selected);

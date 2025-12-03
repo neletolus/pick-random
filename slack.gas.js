@@ -9,7 +9,46 @@ const CONFIG2 = {
 
 const botToken = '';
 
+/**
+* 休日かどうかを判定する関数
+* 
+* @param  {Date}    判定する日付
+* @return {boolean} 休日ならtrueを返す
+*/
+function isHoliday_(date) {
+
+    // ①土日の判定  
+    const day = date.getDay(); //曜日取得
+    if (day === 0 || day === 6) return true;
+
+    // ②祝日の判定
+    const id = 'ja.japanese#holiday@group.v.calendar.google.com'
+    const cal = CalendarApp.getCalendarById(id);
+    const events = cal.getEventsForDay(date);
+    //なんらかのイベントがある＝祝日
+    if (events.length) return true;
+
+    // 必要なら特定の休日入れる。
+    // ③特定の休日判定
+    //   const specialHoliday = [
+    //     '0813',
+    //     '0814',
+    //     '0815',
+    //     '0816',
+    //     '0817'
+    //   ];
+
+    //const mmdd = Utilities.formatDate(date, 'JST', 'MMdd');
+
+    //someメソッドでtrue/falseいずれかが返る
+    //return specialHoliday.some(value => value === mmdd);
+    return false
+}
+
 function sendNotification() {
+    if (isHoliday_(new Date())) {
+        return;
+    }
     const sheet = getSheetByName(CONFIG2.memberSheetName);
     const raw = sheet.getRange(CONFIG2.historyRow, CONFIG2.historyColumn).getValue();
     if (!raw) {

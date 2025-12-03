@@ -4,18 +4,22 @@ const CONFIG = {
   memberSheetName: 'メンバー一覧',
   memberColumn: 1,
   memberHeaderRow: 1,
-  historyColumn: 2,
+  historyColumn: 3,
   historyRow: 2,
   resultSheetName: 'ランダム選択',
   resultDateColumn: 1,
   resultValueColumn: 2,
   resultHeaderRow: 1,
-  defaultPickCount: 1,
+  defaultPickCount: 2,
+  sendFlagColumn: 4,
+  sendFlagRow: 2,
+  lastHistorySize: 2 //履歴がいっぱいになったとき、前回実行だけ残す
 };
 
 function runRandomPick(count) {
   const pickCount = Number.isInteger(count) ? count : CONFIG.defaultPickCount;
   const members = getMembers();
+
   if (members.length === 0) {
     throw new Error('抽選対象のメンバーが見つかりませんでした。');
   }
@@ -37,8 +41,13 @@ function getMembers() {
     return [];
   }
   const rowCount = lastRow - CONFIG.memberHeaderRow;
-  const values = sheet.getRange(CONFIG.memberHeaderRow + 1, CONFIG.memberColumn, rowCount, 1).getValues();
-  return values.map((row) => String(row[0]).trim()).filter((value) => value.length > 0);
+  const memberNames = sheet.getRange(CONFIG.memberHeaderRow + 1, CONFIG.memberColumn, rowCount, 1).getValues();
+  const memberIDs = sheet.getRange(CONFIG.memberHeaderRow + 1, CONFIG.memberColumn + 1, rowCount, 1).getValues();
+
+  return memberNames.map((name, i) => ({
+    id: String(memberIDs[i][0]),
+    name: String(name[0])
+  }));
 }
 
 function loadPickHistory(source) {
@@ -52,13 +61,13 @@ function loadPickHistory(source) {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    const sourceSet = new Set(source);
+    const sourceIDs = source.map(elem => elem.id);
     const seen = new Set();
     const filtered = [];
     parsed.forEach((value) => {
-      if (sourceSet.has(value) && !seen.has(value)) {
+      if (sourceIDs.includes(value.id) && !seen.has(value.id)) {
         filtered.push(value);
-        seen.add(value);
+        seen.add(value.id);
       }
     });
     return filtered;
@@ -71,12 +80,14 @@ function savePickHistory(history) {
   const sheet = getSheetByName(CONFIG.memberSheetName);
   const value = history.length > 0 ? JSON.stringify(history) : '[]';
   sheet.getRange(CONFIG.historyRow, CONFIG.historyColumn).setValue(value);
+  sheet.getRange(CONFIG.sendFlagRow, CONFIG.sendFlagColumn).setValue(false);
 }
 
 function commitPickResults(picks) {
   const sheet = getSheetByName(CONFIG.resultSheetName);
   const timestamp = getTimestamp();
-  sheet.appendRow([timestamp, picks.join(', ')]);
+  const picksName = picks.map(pick => pick.name);
+  sheet.appendRow([timestamp, picksName.join(', ')]);
 }
 
 function getTimestamp() {
@@ -103,19 +114,21 @@ function pickRandomElements(source, count, initialHistory) {
   }
 
   let history = Array.isArray(initialHistory) ? [...initialHistory] : [];
-  let historySet = new Set(history);
-  let available = normalizedSource.filter((item) => !historySet.has(item));
+
+  let historyIDs = history.map(elem => elem.id);
+
+  let available = normalizedSource.filter((item) => !historyIDs.includes(item.id));
   const picked = [];
   const pickedSet = new Set();
 
   while (picked.length < count) {
     if (available.length === 0) {
-      if (historySet.size === sourceUniqueSize) {
-        history = history.slice(-1);
-        historySet = new Set(history);
+      if (history.length === sourceUniqueSize) {
+        history = history.slice(-CONFIG.lastHistorySize);
+        historyIDs = [];
       }
       available = fisherYatesShuffle(normalizedSource).filter(
-        (item) => !historySet.has(item) && !pickedSet.has(item),
+        (item) => !historyIDs.includes(item.id) && !pickedSet.has(item),
       );
       if (available.length === 0) {
         throw new Error('No available elements to pick. Ensure source has enough unique values.');
@@ -130,10 +143,10 @@ function pickRandomElements(source, count, initialHistory) {
     picked.push(next);
     pickedSet.add(next);
     history.push(next);
-    historySet.add(next);
+    historyIDs.push(next.id);
   }
 
-  const persistedHistory = historySet.size === sourceUniqueSize ? history.slice(-1) : history;
+  const persistedHistory = historyIDs.length === sourceUniqueSize ? history.slice(-CONFIG.lastHistorySize) : history;
   return { picks: picked, history: persistedHistory };
 }
 
